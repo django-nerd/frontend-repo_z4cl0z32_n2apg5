@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { Chess } from 'chess.js';
 
 const CLANS = [
   { id: 'blazeborn', name: 'Blazeborn', color: 'from-orange-500 to-red-600', accent: 'ring-orange-400', desc: 'Fire-forged offensive mastery.' },
@@ -81,6 +82,186 @@ const CLAN_DETAILS = {
   },
 };
 
+// Unicode piece glyphs
+const PIECE_GLYPHS = {
+  p: '♟', r: '♜', n: '♞', b: '♝', q: '♛', k: '♚',
+  P: '♙', R: '♖', N: '♘', B: '♗', Q: '♕', K: '♔',
+};
+
+function useChess() {
+  const gameRef = useRef(null);
+  const [fen, setFen] = useState('');
+  const [history, setHistory] = useState([]);
+  const [turn, setTurn] = useState('w');
+  const [winner, setWinner] = useState(null);
+
+  useEffect(() => {
+    gameRef.current = new Chess();
+    setFen(gameRef.current.fen());
+    setTurn(gameRef.current.turn());
+  }, []);
+
+  const reset = () => {
+    gameRef.current = new Chess();
+    setFen(gameRef.current.fen());
+    setHistory([]);
+    setTurn('w');
+    setWinner(null);
+  };
+
+  const getBoard = () => gameRef.current?.board?.() || [];
+  const movesFrom = (square) => gameRef.current?.moves({ square, verbose: true }) || [];
+
+  const move = (moveObj) => {
+    if (!gameRef.current) return false;
+    const m = gameRef.current.move(moveObj);
+    if (m) {
+      setFen(gameRef.current.fen());
+      setHistory([...gameRef.current.history({ verbose: true })]);
+      setTurn(gameRef.current.turn());
+      if (gameRef.current.isCheckmate()) setWinner(m.color === 'w' ? 'white' : 'black');
+      else if (gameRef.current.isStalemate()) setWinner('draw');
+      else if (gameRef.current.isDraw()) setWinner('draw');
+    }
+    return !!m;
+  };
+
+  return { fen, history, turn, winner, reset, getBoard, movesFrom, move };
+}
+
+function PlayBoard({ theme = 'blazeborn' }) {
+  const clanTheme = CLANS.find(c => c.id === theme) || CLANS[0];
+  const { getBoard, movesFrom, move, turn, winner, reset, history } = useChess();
+  const [selected, setSelected] = useState(null);
+  const [targets, setTargets] = useState([]);
+  const [promo, setPromo] = useState(null); // { from, to, color }
+
+  const board = getBoard();
+
+  const onSquareClick = (fileIdx, rankIdx) => {
+    const file = 'abcdefgh'[fileIdx];
+    const rank = 8 - rankIdx;
+    const sq = `${file}${rank}`;
+
+    // If selecting own piece
+    const piece = board[rankIdx]?.[fileIdx];
+    const color = turn === 'w' ? 'w' : 'b';
+    if (piece && piece.color === color) {
+      setSelected(sq);
+      setTargets(movesFrom(sq));
+      return;
+    }
+
+    // Attempt move if we have a selection
+    if (selected) {
+      const legal = targets.find(t => t.to === sq);
+      if (!legal) {
+        // deselect if clicking elsewhere
+        setSelected(null);
+        setTargets([]);
+        return;
+      }
+      // Handle promotion
+      if (legal.flags.includes('p')) {
+        setPromo({ from: legal.from, to: legal.to, color: color });
+        return;
+      }
+      move({ from: legal.from, to: legal.to });
+      setSelected(null);
+      setTargets([]);
+    }
+  };
+
+  const confirmPromotion = (piece) => {
+    if (!promo) return;
+    move({ from: promo.from, to: promo.to, promotion: piece });
+    setPromo(null);
+    setSelected(null);
+    setTargets([]);
+  };
+
+  const squareBg = (i, j) => ((i + j) % 2 === 0 ? 'bg-amber-100' : 'bg-amber-300');
+  const isTarget = (sq) => targets.some(t => t.to === sq);
+
+  return (
+    <div id="play" className="mt-12 grid gap-6 lg:grid-cols-2">
+      <div className={`rounded-xl border bg-white p-4 shadow-sm ring-1 ${clanTheme ? clanTheme.accent : 'ring-black/10'}`}>
+        <div className="flex items-center justify-between px-2 pb-3">
+          <div className="text-sm text-gray-600">Turn: <span className="font-semibold capitalize">{turn === 'w' ? 'White (Light)' : 'Black (Dark)'}</span></div>
+          <button onClick={reset} className="text-sm font-medium text-indigo-600 hover:text-indigo-700">Reset</button>
+        </div>
+        <div className="aspect-square">
+          <div className="grid grid-cols-8 grid-rows-8 h-full w-full overflow-hidden rounded-lg ring-1 ring-black/5">
+            {board.map((rank, rankIdx) => (
+              rank.map((sq, fileIdx) => {
+                const file = 'abcdefgh'[fileIdx];
+                const rankNum = 8 - rankIdx;
+                const algebraic = `${file}${rankNum}`;
+                const selectedCls = selected === algebraic ? 'outline outline-2 outline-indigo-600' : '';
+                const targetCls = isTarget(algebraic) ? 'after:content-[\'\'] after:absolute after:w-3 after:h-3 after:rounded-full after:bg-indigo-600/60 after:ring-2 after:ring-white/80 after:translate-x-[-50%] after:translate-y-[-50%] after:left-1/2 after:top-1/2' : '';
+                return (
+                  <button
+                    key={`${algebraic}`}
+                    onClick={() => onSquareClick(fileIdx, rankIdx)}
+                    className={`relative flex items-center justify-center ${squareBg(fileIdx, rankIdx)} ${selectedCls} ${targetCls}`}
+                  >
+                    {sq && (
+                      <span className={`text-2xl sm:text-3xl ${sq.color === 'w' ? 'text-gray-900' : 'text-gray-800'}`}>
+                        {PIECE_GLYPHS[sq.type === sq.type.toLowerCase() ? sq.type : sq.type] /* safety */}
+                        {sq.color === 'w' ? PIECE_GLYPHS[sq.type.toUpperCase()] : PIECE_GLYPHS[sq.type.toLowerCase()]}
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            ))}
+          </div>
+        </div>
+
+        {winner && (
+          <div className="mt-3 rounded-md bg-indigo-50 px-3 py-2 text-sm text-indigo-700">
+            {winner === 'draw' ? 'Draw by rule.' : `${winner.charAt(0).toUpperCase() + winner.slice(1)} wins!`}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-semibold text-gray-900">Move Log</h3>
+        <p className="mt-1 text-sm text-gray-500">Exact mechanics of chess. This is the operational core; clans are a visual identity only.</p>
+        <ol className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-800">
+          {history.map((m, idx) => (
+            <li key={idx} className="flex items-center justify-between">
+              <span className="text-gray-500 w-8">{Math.floor(idx/2)+1}.</span>
+              <span className="truncate">{m.san}</span>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-4 rounded-lg border border-gray-200">
+          <div className={`rounded-t-lg h-2 bg-gradient-to-r ${clanTheme.color}`} />
+          <div className="p-3 text-sm text-gray-700">Active Clan Skin: <span className="font-medium">{clanTheme.name}</span>. Movement rules, threats, castling, en passant, promotion all follow classical chess.</div>
+        </div>
+      </div>
+
+      {promo && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-6">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <h4 className="text-lg font-semibold text-gray-900">Choose Promotion</h4>
+            <p className="mt-1 text-sm text-gray-600">Select the ascended form for your Scout.</p>
+            <div className="mt-4 grid grid-cols-4 gap-3">
+              {['q','r','b','n'].map(p => (
+                <button key={p} onClick={() => confirmPromotion(p)} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+                  <span className="text-2xl">{promo.color === 'w' ? PIECE_GLYPHS[p.toUpperCase()] : PIECE_GLYPHS[p]}</span>
+                  <div className="mt-1 text-xs text-gray-600 uppercase">{p}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ClanSelector({ value, onChange }) {
   const [selected, setSelected] = useState(value || 'blazeborn');
 
@@ -126,7 +307,6 @@ export default function ClanSelector({ value, onChange }) {
           })}
         </div>
 
-        {/* Chapter 3: Clan Architect (Customization) */}
         {info && (
           <div className="mt-10 grid gap-6 lg:grid-cols-2">
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -153,6 +333,12 @@ export default function ClanSelector({ value, onChange }) {
             </div>
           </div>
         )}
+
+        <div className="mt-12">
+          <h3 className="text-2xl font-bold tracking-tight text-gray-900">Play Now</h3>
+          <p className="mt-1 text-gray-600">Exact chess mechanics with your selected clan as the visual theme.</p>
+          <PlayBoard theme={selected} />
+        </div>
       </div>
     </section>
   );
