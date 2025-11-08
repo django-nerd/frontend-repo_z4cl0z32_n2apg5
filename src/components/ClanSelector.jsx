@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Chess } from 'chess.js';
+import NinjaPiece from './NinjaPiece';
 
 const CLANS = [
   { id: 'blazeborn', name: 'Blazeborn', color: 'from-orange-500 to-red-600', accent: 'ring-orange-400', desc: 'Fire-forged offensive mastery.' },
@@ -80,12 +81,6 @@ const CLAN_DETAILS = {
       narrative: 'A sentient form of void and unlight manifests at the final rank.',
     },
   },
-};
-
-// Unicode piece glyphs
-const PIECE_GLYPHS = {
-  p: '♟', r: '♜', n: '♞', b: '♝', q: '♛', k: '♚',
-  P: '♙', R: '♖', N: '♘', B: '♗', Q: '♕', K: '♔',
 };
 
 function useChess() {
@@ -180,7 +175,7 @@ function PlayBoard({ theme = 'blazeborn' }) {
     setTargets([]);
   };
 
-  const squareBg = (i, j) => ((i + j) % 2 === 0 ? 'bg-amber-100' : 'bg-amber-300');
+  const squareBg = (i, j) => ((i + j) % 2 === 0 ? 'bg-zinc-100' : 'bg-zinc-300');
   const isTarget = (sq) => targets.some(t => t.to === sq);
 
   return (
@@ -206,10 +201,7 @@ function PlayBoard({ theme = 'blazeborn' }) {
                     className={`relative flex items-center justify-center ${squareBg(fileIdx, rankIdx)} ${selectedCls} ${targetCls}`}
                   >
                     {sq && (
-                      <span className={`text-2xl sm:text-3xl ${sq.color === 'w' ? 'text-gray-900' : 'text-gray-800'}`}>
-                        {PIECE_GLYPHS[sq.type === sq.type.toLowerCase() ? sq.type : sq.type] /* safety */}
-                        {sq.color === 'w' ? PIECE_GLYPHS[sq.type.toUpperCase()] : PIECE_GLYPHS[sq.type.toLowerCase()]}
-                      </span>
+                      <NinjaPiece piece={sq} clan={clanTheme.id} />
                     )}
                   </button>
                 );
@@ -227,7 +219,7 @@ function PlayBoard({ theme = 'blazeborn' }) {
 
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h3 className="text-lg font-semibold text-gray-900">Move Log</h3>
-        <p className="mt-1 text-sm text-gray-500">Exact mechanics of chess. This is the operational core; clans are a visual identity only.</p>
+        <p className="mt-1 text-sm text-gray-500">Exact mechanics of chess. Pieces are now clan-forged 3D Ninjas with per-clan gradients.</p>
         <ol className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-800">
           {history.map((m, idx) => (
             <li key={idx} className="flex items-center justify-between">
@@ -249,9 +241,11 @@ function PlayBoard({ theme = 'blazeborn' }) {
             <p className="mt-1 text-sm text-gray-600">Select the ascended form for your Scout.</p>
             <div className="mt-4 grid grid-cols-4 gap-3">
               {['q','r','b','n'].map(p => (
-                <button key={p} onClick={() => confirmPromotion(p)} className="rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                  <span className="text-2xl">{promo.color === 'w' ? PIECE_GLYPHS[p.toUpperCase()] : PIECE_GLYPHS[p]}</span>
-                  <div className="mt-1 text-xs text-gray-600 uppercase">{p}</div>
+                <button key={p} onClick={() => confirmPromotion(p)} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50">
+                  <div className="flex items-center justify-center">
+                    <NinjaPiece piece={{ type: p, color: promo.color }} clan={clanTheme.id} />
+                  </div>
+                  <div className="mt-1 text-xs text-gray-600 uppercase text-center">{p}</div>
                 </button>
               ))}
             </div>
